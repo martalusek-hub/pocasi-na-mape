@@ -1,5 +1,7 @@
 # Počasí na mapě
 
+**Živá aplikace:** <https://martalusek-hub.github.io/pocasi-na-mape/> – z tohoto odkazu jde aplikaci i nainstalovat na plochu (HTTPS).
+
 Interaktivní webová mapa, která zobrazuje **srážky**, **sněžení**, **oblačnost** a **rychlost větru** pro libovolné místo na světě. Mezi vrstvami se přepíná jedním kliknutím, polohu lze zadat názvem města nebo kliknutím do mapy. Stejná data jde zobrazit i jako **graf předpovědi**.
 
 ![Vrstvy](https://img.shields.io/badge/vrstvy-sr%C3%A1%C5%BEky%20%7C%20sn%C4%9B%C5%BEen%C3%AD%20%7C%20obla%C4%8Dnost%20%7C%20v%C3%ADtr-38bdf8)
