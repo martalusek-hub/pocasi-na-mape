@@ -6,7 +6,7 @@
  *  - data Open-Meteo a dlaždice mapy: vždy ze sítě (data musí být čerstvá)
  */
 
-const VERSION = 'pocasi-v2';
+const VERSION = 'pocasi-v3';
 
 const SHELL = [
   './',
