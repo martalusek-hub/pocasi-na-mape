@@ -2,13 +2,13 @@
 
 **Živá aplikace:** <https://martalusek-hub.github.io/pocasi-na-mape/> – z tohoto odkazu jde aplikaci i nainstalovat na plochu (HTTPS).
 
-Interaktivní webová mapa, která zobrazuje **srážky**, **sněžení**, **oblačnost** a **rychlost větru** pro libovolné místo na světě. Mezi vrstvami se přepíná jedním kliknutím, polohu lze zadat názvem města nebo kliknutím do mapy. Stejná data jde zobrazit i jako **graf předpovědi**.
+Interaktivní webová mapa, která zobrazuje **srážky**, **sněžení**, **teplotu**, **oblačnost** a **rychlost větru** pro libovolné místo na světě. Mezi vrstvami se přepíná jedním kliknutím, polohu lze zadat názvem města nebo kliknutím do mapy. Stejná data jde zobrazit i jako **graf předpovědi**.
 
-![Vrstvy](https://img.shields.io/badge/vrstvy-sr%C3%A1%C5%BEky%20%7C%20sn%C4%9B%C5%BEen%C3%AD%20%7C%20obla%C4%8Dnost%20%7C%20v%C3%ADtr-38bdf8)
+![Vrstvy](https://img.shields.io/badge/vrstvy-sr%C3%A1%C5%BEky%20%7C%20sn%C4%9B%C5%BEen%C3%AD%20%7C%20teplota%20%7C%20obla%C4%8Dnost%20%7C%20v%C3%ADtr-38bdf8)
 
 ## Co to umí
 
-- **Čtyři vrstvy** – srážky (mm/h), sněžení (cm/h), oblačnost (%), vítr (km/h) – přepínání je okamžité, bez nového načítání.
+- **Pět vrstev** – srážky (mm/h), sněžení (cm/h), teplota (°C, −30 až +40), oblačnost (%), vítr (km/h) – přepínání je okamžité, bez nového načítání.
 - **Přepínač mapa / graf** – v horní liště přepneš na velký graf vývoje zvolené veličiny na 3 dny dopředu pro střed aktuálního výřezu. Kliknutím do grafu nastavíš čas, který se pak zobrazí i na mapě.
 - **Hodinová předpověď na 3 dny** – časová osa pod mapou, přehrávání animace a tlačítko „Teď“.
 - **Vyhledávání měst** s našeptávačem (česky, včetně země a kraje).
@@ -63,7 +63,7 @@ Aplikaci jde nainstalovat na plochu telefonu i počítače a spustit ji na celou
 
 | Akce | Výsledek |
 | --- | --- |
-| Klik na **Srážky / Sněžení / Oblačnost / Vítr** | přepne vrstvu (zvolený čas zůstane) |
+| Klik na **Srážky / Sněžení / Teplota / Oblačnost / Vítr** | přepne vrstvu (zvolený čas zůstane) |
 | Přepínač **mapa / graf** v horní liště | zobrazí velký graf předpovědi pro střed mapy |
 | Klik do grafu | nastaví vybranou hodinu (projeví se i na mapě) |
 | **Časová osa** dole | výběr hodiny předpovědi (až +3 dny) |
@@ -99,7 +99,7 @@ Rozlišení dat je zhruba 1–11 km podle modelu, takže při velkém přiblíž
 ```
 index.html           – kostra stránky a panely
 style.css            – vzhled (tmavé UI, legenda, popup, mobil)
-app.js               – mapa, načítání dat, interpolace, vyhledávání, PWA
+app.js               – mapa, načítání dat, interpolace, vyhledávání, graf, PWA
 manifest.webmanifest – metadata aplikace pro instalaci
 sw.js                – service worker (offline cache)
 icons/               – ikony aplikace (192, 512, maskable, Apple, favicon)
@@ -119,6 +119,7 @@ precipitation: {
   unit: 'mm/h',
   field: 'precipitation',   // název pole z Open-Meteo
   color: '#38bdf8',         // barva čáry v grafu
+  min: 0,                   // volitelné – dolní mez škály (teplota má −30)
   max: 10,                  // hodnota, na které končí barevná škála
   stops: [                  // [hodnota, [R,G,B], průhlednost]
     [0.0, [56, 189, 248], 0.0],
@@ -129,26 +130,26 @@ precipitation: {
 }
 ```
 
-### Přidání další vrstvy (např. teplota)
+### Přidání další vrstvy (např. tlak)
 
-1. Přidej záznam do `LAYERS` (např. `temperature` s `field: 'temperature_2m'`, `color: '#fb923c'`, `max: 40`).
+1. Přidej záznam do `LAYERS` (např. `pressure` s `field: 'pressure_msl'`, `color: '#f472b6'`, `max: 1050`).
 2. Přidej tlačítko do `index.html`:
    ```html
-   <button class="layer-btn" type="button" data-layer="temperature">Teplota</button>
+   <button class="layer-btn" type="button" data-layer="pressure">Tlak</button>
    ```
 3. V `refreshOverlay` přidej pole do požadavku:
    ```js
-   hourly: 'precipitation,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,temperature_2m',
+   hourly: 'precipitation,snowfall,temperature_2m,cloud_cover,wind_speed_10m,wind_direction_10m,pressure_msl',
    ```
    do inicializace `values`:
    ```js
-   temperature: new Float32Array(n * steps),
+   pressure: new Float32Array(n * steps),
    ```
    a do cyklu přes body/hodiny:
    ```js
-   const tmp = h.temperature_2m || [];
+   const pr = h.pressure_msl || [];
    ...
-   values.temperature[idx] = num(tmp[t]);
+   values.pressure[idx] = num(pr[t]);
    ```
 
 Zbytek (legenda, přepínání, interpolace, časová osa i graf) se zařídí sám.
@@ -168,6 +169,7 @@ V `app.js` uprav:
 - Open-Meteo je zdarma pro nekomerční použití; při velkém provozu se řiď jejich podmínkami.
 - „Srážky“ ve vrstvě jsou hodinový úhrn (mm/h) z hodinové předpovědi; popup v bodě ukazuje aktuální hodnotu.
 - „Sněžení“ je hodinový úhrn v cm/h. V teplejších oblastech bývá nula, takže vrstva může být celá průhledná.
+- „Teplota“ je teplota vzduchu ve 2 metrech ve °C; škála je −30 až +40, extrémy se zobrazí barvou kraje škály.
 - Graf i vrstvy ukazují střed aktuálního výřezu mapy – po posunu mapy se data i graf přepočítají.
 - Předpověď má hodinové kroky – mezi hodinami se neinterpoluje v čase.
 - Přesnost je daná modelem – nejde o radarová data v reálném čase.

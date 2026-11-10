@@ -57,6 +57,27 @@
       ticks: [0, 0.5, 1, 2, 5],
       tickLabels: ['0', '0,5', '1', '2', '5+'],
     },
+    temperature: {
+      title: 'Teplota',
+      unit: '°C',
+      field: 'temperature_2m',
+      color: '#fb923c',
+      min: -30,
+      max: 40,
+      stops: [
+        [-30, [76, 29, 149], 0.62],
+        [-20, [67, 56, 202], 0.6],
+        [-10, [37, 99, 235], 0.58],
+        [0, [125, 211, 252], 0.58],
+        [8, [134, 239, 172], 0.52],
+        [16, [250, 204, 21], 0.55],
+        [24, [251, 146, 60], 0.62],
+        [32, [239, 68, 68], 0.68],
+        [40, [190, 18, 60], 0.72],
+      ],
+      ticks: [-30, -20, -10, 0, 20, 40],
+      tickLabels: ['-30', '-20', '-10', '0', '20', '40+'],
+    },
     cloud: {
       title: 'Oblačnost',
       unit: '%',
@@ -223,10 +244,12 @@
     const layer = LAYERS[layerName];
     const lut = new Uint8ClampedArray(256 * 4);
     const stops = layer.stops;
+    const min = Number.isFinite(layer.min) ? layer.min : 0;
     const max = layer.max;
+    const range = max - min;
 
     for (let i = 0; i < 256; i++) {
-      const v = (i / 255) * max;
+      const v = min + (i / 255) * range;
       let s0 = stops[0];
       let s1 = stops[stops.length - 1];
       for (let s = 0; s < stops.length - 1; s++) {
@@ -326,7 +349,8 @@
     const layer = LAYERS[state.layer];
     const lut = getLut(state.layer);
     const vals = state.grid.values[state.layer];
-    const max = layer.max;
+    const min = Number.isFinite(layer.min) ? layer.min : 0;
+    const range = layer.max - min;
     const offset = state.timeIndex * NX * NY;
 
     const img = ctx.createImageData(cw, ch);
@@ -362,7 +386,7 @@
         const bottom = v01 + (v11 - v01) * tx;
         const v = top + (bottom - top) * ty;
 
-        let idx = (v / max) * 255;
+        let idx = ((v - min) / range) * 255;
         idx = idx < 0 ? 0 : idx > 255 ? 255 : idx | 0;
 
         const q = idx * 4;
@@ -429,7 +453,7 @@
       latitude: lats.join(','),
       longitude: lngs.join(','),
       hourly:
-        'precipitation,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m',
+        'precipitation,snowfall,temperature_2m,cloud_cover,wind_speed_10m,wind_direction_10m',
       forecast_days: String(FORECAST_DAYS),
       timezone: 'UTC',
     });
@@ -462,6 +486,7 @@
       const values = {
         precipitation: new Float32Array(n * steps),
         snow: new Float32Array(n * steps),
+        temperature: new Float32Array(n * steps),
         cloud: new Float32Array(n * steps),
         wind: new Float32Array(n * steps),
       };
@@ -471,6 +496,7 @@
         const h = (list[k] && list[k].hourly) || {};
         const p = h.precipitation || [];
         const s = h.snowfall || [];
+        const temp = h.temperature_2m || [];
         const c = h.cloud_cover || [];
         const w = h.wind_speed_10m || [];
         const d = h.wind_direction_10m || [];
@@ -479,6 +505,7 @@
           const idx = t * n + k;
           values.precipitation[idx] = num(p[t]);
           values.snow[idx] = num(s[t]);
+          values.temperature[idx] = num(temp[t]);
           values.cloud[idx] = num(c[t]);
           values.wind[idx] = num(w[t]);
           dirs[idx] = num(d[t]);
@@ -543,6 +570,8 @@
 
   function updateLegend() {
     const layer = LAYERS[state.layer];
+    const min = Number.isFinite(layer.min) ? layer.min : 0;
+    const range = layer.max - min;
 
     $('#legendTitle').textContent = layer.title;
     $('#legendUnit').textContent = layer.unit;
@@ -550,7 +579,10 @@
     $('#legendBar').style.background =
       'linear-gradient(90deg, ' +
       layer.stops
-        .map(([v, c, a]) => `${rgba(c, a)} ${((v / layer.max) * 100).toFixed(2)}%`)
+        .map(
+          ([v, c, a]) =>
+            `${rgba(c, a)} ${((((v - min) / range) * 100).toFixed(2))}%`
+        )
         .join(', ') +
       ')';
 
@@ -560,7 +592,7 @@
     layer.ticks.forEach((tick, i) => {
       const span = document.createElement('span');
       span.textContent = layer.tickLabels[i];
-      const pct = (tick / layer.max) * 100;
+      const pct = ((tick - min) / range) * 100;
       span.style.left = `${pct}%`;
       if (pct <= 0.01) span.style.transform = 'translateX(0)';
       else if (pct >= 99.99) span.style.transform = 'translateX(-100%)';
@@ -795,38 +827,67 @@
     const plotH = h - pad.top - pad.bottom;
     if (plotW <= 10 || plotH <= 10) return;
 
-    const dataMax = Math.max(0, ...data);
-    const yMax =
-      state.layer === 'cloud'
-        ? 100
-        : niceCeil(Math.max(layer.max * 0.12, dataMax * 1.15));
+    const dataMax = Math.max(...data);
+    const dataMin = Math.min(...data);
 
+    let yMin = 0;
+    let yMax;
+    let yTicks;
+
+    if (state.layer === 'cloud') {
+      yMax = 100;
+      yTicks = [0, 25, 50, 75, 100];
+    } else if (state.layer === 'temperature') {
+      const span = Math.max(4, dataMax - dataMin);
+      const rawStep = span / 4;
+      const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+      const norm = rawStep / mag;
+      const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+      const step = nice * mag;
+
+      yMin = Math.floor(dataMin / step) * step;
+      yMax = Math.ceil(dataMax / step) * step;
+      if (yMax - yMin < step) yMax = yMin + step;
+
+      yTicks = [];
+      for (let v = yMin; v <= yMax + 1e-9; v += step) {
+        yTicks.push(Math.round(v * 1000) / 1000);
+      }
+    } else {
+      yMax = niceCeil(Math.max(layer.max * 0.12, dataMax * 1.15));
+      yTicks = [];
+      for (let i = 0; i <= 5; i++) yTicks.push((yMax / 5) * i);
+    }
+
+    const yRange = yMax - yMin || 1;
     const xFor = (i) => pad.left + (i / Math.max(1, data.length - 1)) * plotW;
-    const yFor = (v) => pad.top + plotH - (v / yMax) * plotH;
+    const yFor = (v) => pad.top + plotH - ((v - yMin) / yRange) * plotH;
 
     /* vodorovná mřížka + osa Y */
     ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'right';
 
-    const ySteps = 4;
-    const yDecimals = yMax <= 5 ? 1 : 0;
+    const tickStep = yTicks.length > 1 ? yTicks[1] - yTicks[0] : 1;
+    const yDecimals =
+      tickStep >= 1 ? (Number.isInteger(tickStep) ? 0 : 1) : tickStep >= 0.5 ? 1 : 2;
 
-    for (let i = 0; i <= ySteps; i++) {
-      const value = (yMax / ySteps) * i;
+    yTicks.forEach((value) => {
       const y = yFor(value);
 
       ctx.beginPath();
       ctx.moveTo(pad.left, y);
       ctx.lineTo(w - pad.right, y);
-      ctx.strokeStyle =
-        i === 0 ? 'rgba(148, 163, 184, 0.32)' : 'rgba(148, 163, 184, 0.12)';
+      const isZero = Math.abs(value) < 1e-9;
+      ctx.strokeStyle = isZero
+        ? 'rgba(148, 163, 184, 0.32)'
+        : 'rgba(148, 163, 184, 0.12)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
       ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
       ctx.fillText(fmtAxis(value, yDecimals), pad.left - 8, y);
-    }
+    });
 
     /* svislé dělítka po dnech + popisky uprostřed dne */
     ctx.textAlign = 'center';
@@ -1225,7 +1286,7 @@
       current:
         'temperature_2m,apparent_temperature,relative_humidity_2m,' +
         'precipitation,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code',
-      hourly: 'precipitation,snowfall,cloud_cover,wind_speed_10m',
+      hourly: 'precipitation,snowfall,temperature_2m,cloud_cover,wind_speed_10m',
       forecast_days: '2',
       timezone: 'auto',
     });
@@ -1304,11 +1365,20 @@
     const bottom = h - 12;
     const left = 3;
     const right = w - 3;
-    const maxV = Math.max(layer.max * 0.12, ...vals) * 1.12;
+
+    /* Vrstvy se zápornými hodnotami (teplota) škálujeme podle dat. */
+    const hasMin = Number.isFinite(layer.min);
+    const dataMin = Math.min(...vals);
+    const dataMax = Math.max(...vals);
+    const padV = hasMin ? Math.max(0.4, (dataMax - dataMin) * 0.18) : 0;
+    const lo = hasMin ? dataMin - padV : 0;
+    const hi = hasMin
+      ? dataMax + padV
+      : Math.max(layer.max * 0.12, dataMax) * 1.12;
 
     const xFor = (i) =>
       left + (i / Math.max(1, vals.length - 1)) * (right - left);
-    const yFor = (v) => bottom - (v / maxV) * (bottom - top);
+    const yFor = (v) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
 
     /* plocha */
     ctx.beginPath();
@@ -1323,8 +1393,8 @@
     ctx.closePath();
 
     const grad = ctx.createLinearGradient(0, top, 0, bottom);
-    grad.addColorStop(0, 'rgba(56, 189, 248, 0.34)');
-    grad.addColorStop(1, 'rgba(56, 189, 248, 0.02)');
+    grad.addColorStop(0, hexToRgba(layer.color, 0.34));
+    grad.addColorStop(1, hexToRgba(layer.color, 0.02));
     ctx.fillStyle = grad;
     ctx.fill();
 
@@ -1336,7 +1406,7 @@
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = '#38bdf8';
+    ctx.strokeStyle = layer.color;
     ctx.lineWidth = 1.6;
     ctx.lineJoin = 'round';
     ctx.stroke();
@@ -1347,7 +1417,7 @@
     if (vals[peak] > 0) {
       ctx.beginPath();
       ctx.arc(xFor(peak), yFor(vals[peak]), 2.6, 0, Math.PI * 2);
-      ctx.fillStyle = '#7dd3fc';
+      ctx.fillStyle = '#e2e8f0';
       ctx.fill();
     }
 

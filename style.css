@@ -713,7 +713,9 @@ body {
 
   .layer-btn {
     flex: 1;
-    padding: 7px 6px;
+    min-width: 0;
+    padding: 7px 4px;
+    font-size: 12px;
     text-align: center;
   }
 
